@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Visitor Feedback — Office</title>
+  <style>
+    :root{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    body{margin:0;background:#f7fafc;color:#0f172a}
+    .container{max-width:900px;margin:28px auto;padding:20px;background:#fff;border-radius:10px;box-shadow:0 6px 20px rgba(2,6,23,0.08)}
+    h1{margin:0 0 6px;font-size:22px}
+    p.lead{margin:0 0 18px;color:#334155}
+    label{display:block;margin:12px 0 6px;font-weight:600}
+    input[type=text],input[type=email],select,textarea{width:100%;padding:10px;border-radius:6px;border:1px solid #e6edf3;font-size:14px}
+    textarea{min-height:100px;resize:vertical}
+    .row{display:flex;gap:12px}
+    .col{flex:1}
+    .actions{display:flex;gap:12px;align-items:center;margin-top:14px}
+    button{padding:10px 14px;border-radius:8px;border:0;background:#0ea5a4;color:#fff;font-weight:600;cursor:pointer}
+    button.secondary{background:#64748b}
+    .small{font-size:13px;color:#475569}
+    .qr-box{display:flex;gap:16px;align-items:center;padding:12px;border:1px dashed #e2e8f0;border-radius:8px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:8px;border:1px solid #e6edf3;text-align:left;font-size:13px}
+    .admin{margin-top:20px}
+    .hint{font-size:13px;color:#475569}
+  </style>
+  <!-- QRCode.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- jsPDF CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Visitor Feedback Form</h1>
+    <p class="lead">Please help us improve by sharing brief feedback about your visit. Scan the QR or open this page on your phone.</p>
+
+    <form id="feedbackForm">
+      <div class="row">
+        <div class="col">
+          <label for="name">Name (optional)</label>
+          <input id="name" name="name" type="text" placeholder="John Doe" />
+        </div>
+        <div class="col">
+          <label for="email">Email (optional)</label>
+          <input id="email" name="email" type="email" placeholder="you@example.com" />
+        </div>
+      </div>
+
+      <label for="dept">Department / Person visited</label>
+      <input id="dept" name="dept" type="text" placeholder="e.g. Billing / Reception / Sales" />
+
+      <div class="row">
+        <div class="col">
+          <label for="rating">Rating</label>
+          <select id="rating" name="rating">
+            <option value="5">5 — Excellent</option>
+            <option value="4">4 — Good</option>
+            <option value="3">3 — Okay</option>
+            <option value="2">2 — Poor</option>
+            <option value="1">1 — Very poor</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="wait">Waiting time (mins)</label>
+          <input id="wait" name="wait" type="text" placeholder="approx minutes" />
+        </div>
+      </div>
+
+      <label for="comments">Comments / Suggestions</label>
+      <textarea id="comments" name="comments" placeholder="Write your feedback here..."></textarea>
+
+      <label><input id="consent" type="checkbox" /> I consent to my feedback being used to improve services (optional)</label>
+
+      <div class="actions">
+        <button type="submit">Submit feedback</button>
+        <button id="downloadBlank" type="button" class="secondary">Download blank form (PDF)</button>
+        <button id="clearLocal" type="button" class="secondary">Clear local stored responses</button>
+        <div style="margin-left:auto;text-align:right">
+          <div class="hint">Page URL (for QR): <span id="pageUrl" style="font-weight:600"></span></div>
+        </div>
+      </div>
+    </form>
+
+    <hr />
+
+    <div class="qr-box">
+      <div id="qrcode"></div>
+      <div>
+        <div style="font-weight:700">QR for downloading blank form</div>
+        <div class="small">Scan to download the PDF blank feedback form. You can print this QR and place it at reception.</div>
+      </div>
+    </div>
+
+    <div class="admin">
+      <h3>Admin — Stored responses</h3>
+      <p class="small">Responses are stored in the browser's localStorage by default. You can export as CSV or configure a webhook in the source code to forward responses to your server.</p>
+      <div style="margin-top:8px">
+        <button id="exportCsv">Export CSV</button>
+        <button id="showResponses" class="secondary">Show responses</button>
+      </div>
+      <div id="responsesArea"></div>
+    </div>
+
+  </div>
+
+<script>
+(function(){
+  // Utilities
+  function qs(id){return document.getElementById(id)}
+  const storageKey = 'visitor_feedback_responses_v1';
+
+  function loadResponses(){
+    try{const raw = localStorage.getItem(storageKey); return raw?JSON.parse(raw):[];}catch(e){return []}
+  }
+  function saveResponses(arr){localStorage.setItem(storageKey,JSON.stringify(arr))}
+
+  // Form handling
+  const form = qs('feedbackForm');
+  form.addEventListener('submit',function(ev){ev.preventDefault();
+    const data = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      name: qs('name').value.trim(),
+      email: qs('email').value.trim(),
+      dept: qs('dept').value.trim(),
+      rating: qs('rating').value,
+      wait: qs('wait').value.trim(),
+      comments: qs('comments').value.trim(),
+      consent: qs('consent').checked
+    };
+    const arr = loadResponses(); arr.unshift(data); saveResponses(arr);
+    alert('Thanks — your feedback has been recorded.');
+    form.reset();
+  });
+
+  // Export CSV
+  function toCSV(rows){
+    if(!rows.length) return '';
+    const keys = Object.keys(rows[0]);
+    const esc = v => '"'+String(v===undefined?'':v).replace(/"/g,'""')+'"';
+    const lines = [keys.map(esc).join(',')];
+    for(const r of rows){lines.push(keys.map(k=>esc(r[k])).join(','))}
+    return lines.join('\n');
+  }
+  qs('exportCsv').addEventListener('click',function(){
+    const rows = loadResponses();
+    if(!rows.length){alert('No responses to export'); return}
+    const csv = toCSV(rows);
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='responses.csv'; a.click(); URL.revokeObjectURL(url);
+  });
+
+  qs('showResponses').addEventListener('click',function(){
+    const rows = loadResponses();
+    const area = qs('responsesArea'); area.innerHTML='';
+    if(!rows.length){area.innerHTML='<p class="small">No responses saved yet.</p>'; return}
+    const table = document.createElement('table');
+    const thead = document.createElement('thead'); thead.innerHTML='<tr>'+Object.keys(rows[0]).map(k=>'<th>'+k+'</th>').join('')+'</tr>';
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for(const r of rows){
+      const tr = document.createElement('tr');
+      for(const k of Object.keys(rows[0])){
+        const td = document.createElement('td'); td.textContent = r[k]; tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody); area.appendChild(table);
+  });
+
+  qs('clearLocal').addEventListener('click',function(){
+    if(confirm('Clear all locally stored responses?')){localStorage.removeItem(storageKey); alert('Cleared.'); qs('responsesArea').innerHTML=''}
+  });
+
+  // PDF generation (blank form)
+  async function generateBlankPDF(){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'pt',format:'a4'});
+    const left = 40; let y=40; const lineHeight = 18;
+    doc.setFontSize(16); doc.text('Visitor Feedback Form', 40, y); y+=lineHeight*1.6;
+    doc.setFontSize(11);
+    doc.text('Please fill and submit the form at reception or online.', left, y); y+=lineHeight*1.6;
+
+    const fields = [
+      ['Name (optional):',''],
+      ['Email (optional):',''],
+      ['Department / Person visited:',''],
+      ['Rating (1-5):',''],
+      ['Waiting time (mins):',''],
+      ['Comments / Suggestions:',''],
+    ];
+    for(const f of fields){
+      doc.text(f[0], left, y); y+=lineHeight; doc.rect(left, y, 500, 70); y+=76;
+    }
+    doc.save('visitor_feedback_form.pdf');
+  }
+  qs('downloadBlank').addEventListener('click',generateBlankPDF);
+
+  // QR code that points to the page URL with ?download=1 which will trigger the PDF download
+  function buildDownloadUrl(){
+    const url = new URL(window.location.href);
+    url.searchParams.set('download','1');
+    return url.toString();
+  }
+  function makeQRCode(uri){
+    const container = qs('qrcode'); container.innerHTML='';
+    new QRCode(container,{text:uri,width:160,height:160,correctLevel:QRCode.CorrectLevel.Q});
+  }
+  const pageUrlSpan = qs('pageUrl'); pageUrlSpan.textContent = window.location.href;
+  const dlUrl = buildDownloadUrl(); makeQRCode(dlUrl);
+
+  // If URL contains download=1, auto-generate PDF (useful when scanning QR)
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('download')==='1'){
+    // auto-download blank pdf
+    generateBlankPDF();
+  }
+
+  // Optionally: send to webhook if you configure one here
+  // const WEBHOOK_URL = ''; // <-- put your server endpoint here to forward responses
+  // To enable, uncomment the code below and set WEBHOOK_URL
+  async function maybeForwardToWebhook(response){
+    const WEBHOOK_URL = ''; // configure your webhook URL here if you want server forwarding
+    if(!WEBHOOK_URL) return;
+    try{ await fetch(WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(response)}); }catch(e){console.warn('webhook send failed',e)}
+  }
+
+  // keep a reference to original functions to forward submissions
+  const originalSubmit = form.addEventListener;
+
+})();
+</script>
+</body>
+</html>
